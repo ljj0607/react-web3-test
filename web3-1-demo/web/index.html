@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能合约交互</title>
+    <script src="./node_modules/ethers/dist/ethers.umd.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .status.disconnected {
+            background: rgba(220, 53, 69, 0.3);
+            border: 2px solid #dc3545;
+        }
+
+        .status.connected {
+            background: rgba(40, 167, 69, 0.3);
+            border: 2px solid #28a745;
+        }
+
+        .status.loading {
+            background: rgba(255, 193, 7, 0.3);
+            border: 2px solid #ffc107;
+        }
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .section {
+            margin: 25px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border-left: 4px solid #4ecdc4;
+        }
+
+        .contract-info {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            min-height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔗 智能合约交互界面</h1>
+
+        <!-- 连接状态 -->
+        <div id="connectionStatus" class="status disconnected">
+            未连接MetaMask钱包
+        </div>
+
+        <!-- 钱包连接区域 -->
+        <div class="section">
+            <h3>📱 钱包连接</h3>
+            <button id="connectWallet">连接MetaMask</button>
+            <button id="disconnectWallet" disabled>断开连接</button>
+            <div id="walletInfo" class="contract-info" style="display:none;"></div>
+        </div>
+
+        <!-- 合约信息 -->
+        <div class="section">
+            <h3>📋 合约信息</h3>
+            <div class="contract-info">
+                <div><strong>合约地址:</strong> 0x30Ebeb2B5ab11f5f81541d2c40D23044D774dDB3</div>
+                <div><strong>网络:</strong> 本地链 (Localhost)</div>
+            </div>
+        </div>
+
+        <!-- setHI 函数调用 -->
+        <div class="section">
+            <h3>✍️ 设置HI消息</h3>
+            <input type="text" id="hiMessage" placeholder="输入要设置的HI消息...">
+            <button id="setHiBtn" disabled>调用 setHI</button>
+            <div id="setHiResult" class="result"></div>
+        </div>
+
+        <!-- 读取函数 (假设有getHI) -->
+        <div class="section">
+            <h3>📖 读取HI消息</h3>
+            <button id="getHiBtn" disabled>获取 HI 消息</button>
+            <div id="getHiResult" class="result"></div>
+        </div>
+
+        <!-- 其他合约函数 -->
+        <div class="section">
+            <h3>🔧 其他合约函数</h3>
+            <p>在这里可以添加其他合约函数的调用</p>
+        </div>
+    </div>
+    <script>
+        const CONTRACT_ADDRESS = '0x30Ebeb2B5ab11f5f81541d2c40D23044D774dDB3';
+        const CONTRACT_ABI = fetch('../build/contracts/InfoContract.json')
+            .then(response => response.json())
+            .then(data => data.abi);
+
+        // dom元素
+        const connectWalletBtn = document.getElementById('connectWallet');
+        const disconnectWalletBtn = document.getElementById('disconnectWallet');
+        const setHiBtn = document.getElementById('setHiBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const walletInfo = document.getElementById('walletInfo');
+        const setHiMessageInput = document.getElementById('hiMessage');
+        const setHiResult = document.getElementById('setHiResult');
+        const getHiBtn = document.getElementById('getHiBtn');
+        const getHiResult = document.getElementById('getHiResult');
+
+        let provider;
+        let signer;
+        let contract;
+        let walletAddress;
+
+        // 检查是否安装MetaMask
+        function isMetaMaskInstalled() {
+            if (typeof window.ethereum !== 'undefined') {
+                return true;
+            } else {
+                alert('请安装MetaMask钱包')
+                return false;
+            }
+        }
+
+        function updateUI(status, message) {
+            connectionStatus.className = `status ${status}`;
+            connectionStatus.textContent = message;
+        }
+
+        // 禁用按钮
+        function disableButtons() {
+            connectWalletBtn.disabled = true;
+            disconnectWalletBtn.disabled = false;
+            setHiBtn.disabled = false;
+            getHiBtn.disabled = false;
+        }
+
+        // 启用按钮
+        function enableButtons() {
+            connectWalletBtn.disabled = false;
+            disconnectWalletBtn.disabled = true;
+            setHiBtn.disabled = true;
+            getHiBtn.disabled = true;
+        }
+
+        // 显示钱包信息
+        async function showWalletInfo() {
+            const getNetwork = await provider.getNetwork();
+            const getBalance = await provider.getBalance(walletAddress);
+            walletInfo.innerHTML = `<div>
+                <div><strong>连接地址:</strong> ${walletAddress}</div>
+                <div><strong>链ID:</strong> ${getNetwork.chainId}</div>
+                <div><strong>链名称:</strong>  ${getNetwork.name === 'unknown' ? '本地链 Localhost' : getNetwork.name}</div>
+                <div><strong>余额:</strong> ${getBalance}</div>
+            </div>`
+            walletInfo.style.display = 'block';
+        }
+
+        // 连接钱包
+        async function connectWallet() {
+            if (isMetaMaskInstalled()) {
+                updateUI('loading', '连接中...');
+                // 连接MetaMask
+                provider = new ethers.BrowserProvider(window.ethereum);
+                // 请求用户授权
+                const accounts = await provider.send("eth_requestAccounts");
+                if (accounts.length > 0) {
+                    // 获取用户地址
+                    walletAddress = accounts[0];
+                }
+                // 显示连接状态
+                signer = await provider.getSigner();
+
+                const abi = await CONTRACT_ABI;
+                // 创建合约实例
+                contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+
+                updateUI('connected', '连接成功');
+                disableButtons();
+                showWalletInfo();
+            }
+        }
+
+        // 断开连接
+        async function disconnectWallet() {
+            if (provider) {
+                provider = null;
+                signer = null;
+                contract = null;
+                walletAddress = null;
+                walletInfo.innerHTML = '';
+                walletInfo.style.display = 'none';
+                updateUI('disconnected', '未连接MetaMask钱包');
+                enableButtons();
+            }
+        }
+
+        // 设置HI消息
+        async function setHi() {
+            const value = setHiMessageInput.value;
+            if (!value) {
+                alert('请输入要设置的HI消息');
+                return;
+            }
+            try {
+                const tx = await contract.setInfo(value, value);
+                console.log(tx);
+
+                setHiResult.innerHTML = `<div>
+                    <div><strong>交易哈希:</strong> ${tx.hash}</div>
+                    <div><strong>区块号:</strong> ${tx.blockNumber}</div>
+                </div>`;
+
+                // 等待交易确认
+                await tx.wait();
+                alert('HI消息设置成功');
+
+                // 读取消息
+                const getHiResult = await contract.getInfo();
+                alert(`当前HI消息: ${getHiResult}`);
+
+                setHiMessageInput.value = '';
+            } catch (error) {
+                alert('设置HI消息失败');
+            }
+        }
+
+        // 读取HI消息
+        async function getHi(params) {
+            try {
+                const getHiResult = await contract.getInfo();
+                alert(`当前HI消息: ${getHiResult}`);
+                getHiResult.innerHTML = `<div>
+                    <div><strong>当前HI消息:</strong> ${getHiResult}</div>
+                </div>`;
+            } catch (error) {
+                alert('获取HI消息失败');
+            }
+        }
+
+        // 监听账户变化
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', (accounts) => {
+                if (accounts.length === 0) {
+                    disconnectWallet();
+                } else {
+                    walletAddress = accounts[0];
+                    showWalletInfo();
+                }
+            })
+
+            window.ethereum.on('chainChanged', () => {
+                // 网络变化，刷新页面
+                window.location.reload();
+            });
+        }
+
+        //事件监听
+        connectWalletBtn.addEventListener('click', connectWallet);
+        disconnectWalletBtn.addEventListener('click', disconnectWallet);
+        setHiBtn.addEventListener('click', setHi);
+        getHiBtn.addEventListener('click', getHi);
+
+        // 页面加载时检查是否已连接MetaMask
+        window.addEventListener('load', async () => {
+            if (isMetaMaskInstalled()) {
+                try {
+                    // 尝试获取账户
+                    const accounts = await provider.send("eth_requestAccounts");
+                    if (accounts.length > 0) {
+                        // 若获取到账户，自动连接钱包
+                        await connectWallet();
+                    }
+                } catch (error) {
+                    console.log('自动连接钱包失败:', error);
+                }
+            }
+        })
+
+    </script>
+</body>
+
+</html>
